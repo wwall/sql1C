@@ -1,0 +1,438 @@
+Packet = Root (lxmENDL Root)*    (* Правило собирающее все что касается верхнего уровня *)
+Root = DropCommand | SelectCommand
+
+DropCommand = lxmDROP tknID (* уничтожение временной таблицы*)
+
+SelectCommand = QuerySpecification QuerySpecifiacationTail*
+QuerySpecifiacationTail =	lxmUNION ?(lxmALL| lxmDISTINCT ) QuerySpecification
+
+
+QuerySpecification	=	lxmSELECT
+				lxmALLOWED?
+                                SetQuantifierFunc?
+                                (lxmTOP tknINT)?
+                                SelectList
+                                (lxmINTO tknID )?
+                                TableExpression?
+				ws
+
+
+
+
+(*Сортировка*)
+SortClause			=	lxmORDER (lxmBY| lxmON)  SortSpecificationList
+SortSpecificationList		=	SortSpecification  ( lxmCOMMA SortSpecification)*
+SortSpecification		=	VE  (lxmASC | lxmDESC)?
+
+(* Индексирование *)
+IndexClause			=	lxmINDEX (lxmBY | lxmON) CommaSeparatedFields
+
+Subquery			=	lxmOPEN QueryExpressionBody lxmCLOSE
+QueryExpressionBody		= 	SelectCommand  | JoinedTable
+
+
+SelectList			=	lxmMUL | SelectSublist  ( lxmCOMMA SelectSublist )*
+SelectSublist			=	DerivedColumn  | QualifiedAsterisk
+DerivedColumn			=	VE AsClause?
+AsClause			=	lxmAS  tknID 
+
+QualifiedAsterisk		=	 VE (lxmDOT  VE)* lxmDOT lxmMUL
+
+TableExpression			=	FromClause  WhereClause? GroupByClause? HavingClause? SortClause? IndexClause?
+FieldList			=	tknID (lxmDOT tknID)*
+
+(* Таблицы выбора *)
+FromClause			=	lxmFROM TableReference (lxmCOMMA TableReference)*
+TableReference			=	TablePrimary  AsClause? (JoinRest)*
+JoinRest			=	JoinType? lxmJOIN TableReference JoinCondition
+
+TablePrimary			=	TableOrQueryName | Subquery | lxmOPEN JoinedTable lxmCLOSE 
+
+TableOrQueryName		=	FieldList  ParameterArgumentList?
+
+ParameterArgumentList		=	lxmOPEN VE (lxmCOMMA (VE)?)*  lxmCLOSE
+JoinedTable			=	TableReference AsClause? JoinType? lxmJOIN TableReference JoinCondition
+
+JoinType			=	(lxmINNER |   lxmLEFT | lxmRIGHT | lxmFULL lxmOUTER)*
+
+JoinCondition			=	lxmON VE
+WhereClause			=	lxmWHERE VE
+GroupByClause			=	lxmGROUP (lxmBY | lxmON) CommaSeparatedFields
+HavingClause			=	lxmHAVING VE
+
+CommaSeparatedFields            =       FieldList ( lxmCOMMA FieldList)*
+
+
+CaseExpression			=	lxmCASE  (lxmWHEN VE lxmTHEN VE)+ (lxmELSE VE)? lxmEND
+
+
+StringVE			=lxmSUBSTRING lxmOPEN VE lxmCOMMA lxmNUMBER lxmCOMMA lxmNUMBER lxmCLOSE | tknSTRING 
+DateVE			= (lxmDATE | lxmDAY| lxmDAYOFYEAR| lxmDAYOFWEEK| lxmHOUR| lxmMINUTE| lxmMONTH| lxmQUARTER| lxmSECOND| lxmWEEK | lxmYEAR) ParameterArgumentList
+
+
+RowValueConstructor		=	VE | Subquery
+
+
+InPredicateValue			= lxmOPEN (QueryExpressionBody | InValueList) lxmCLOSE
+
+InPredicateValueStart			=VE (lxmDOT VE)* | lxmOPEN InValueList lxmCLOSE
+
+InValueList			=	VE (lxmCOMMA VE )*
+
+LikePredicate			=	VE lxmLIKE VE
+NullPredicate			=	VE lxmIS ( lxmNOT )? lxmNULL
+
+
+(* Search Condition *)
+
+SearchCondition			=	VE 
+VE				=	ws VEws ws
+VEws                            =       Term   (lxmOR  VE)*
+Term				=	Factor (lxmAND Term)*
+Factor				=	lxmNOT? Primary
+
+Primary				=	 lxmOPEN VE lxmCLOSE
+					| lxmTRUE
+					| lxmFALSE
+					| pVE lxmIS lxmNOT? lxmNULL
+					| pVE lxmLIKE VE
+					| pVE lxmNOT? lxmIN InPredicateValue
+					| pVE lxmBETWEEN tknNUMBER lxmAND tknNUMBER
+					| pVE lxmREFS FieldList
+					| pVE CompOp VE
+					| pVE
+
+
+CompOp				=	 '<>' | '>=' | '<='  | '>'  | '<' | '=' 
+
+pVE				=	lTerm ((lxmPLUS | lxmMINUS) pVE)*
+lTerm				=	lFactor ((lxmMUL | lxmDIV) lTerm)*
+lFactor				=	(lxmPLUS | lxmMINUS)?  lPrimary
+
+lLxmValue			=       lxmVALUE lxmOPEN FieldList lxmCLOSE
+
+lPrimary			=	lxmNULL
+                                        | lxmMUL
+                                        | lLxmValue
+					| CaseExpression
+					| StringVE
+					| tknNUMBER
+					| DateVE
+					| tknPARAMETER
+					| lxmUNDEFINED
+					| lxmCAST lxmOPEN VE lxmAS VE (lxmOPEN tknNUMBER (lxmCOMMA tknNUMBER)? lxmCLOSE)? lxmCLOSE
+					| lxmISNULL lxmOPEN VE lxmCOMMA VE lxmCLOSE
+					| GeneralSetFunction
+					| FieldList ParameterArgumentList?
+					| Subquery
+
+GeneralSetFunction			=	ComputationalOperation lxmOPEN ( SetQuantifierFunc )? VE lxmCLOSE
+ComputationalOperation			=	lxmSUM| lxmAVG | lxmMAX | lxmMIN | lxmCOUNT 
+SetQuantifierFunc			=	lxmDISTINCT | lxmALL 
+
+
+ColumnReference			=	VE (lxmDOT VE)*
+SetQuantifier			=	lxmDISTINCT | lxmALL | lxmALLOWED | lxmTOP lxmNUMBER
+DateFunctionValue			=	FuncDate lxmOPEN VE lxmCLOSE| lxmDATETIME lxmOPEN VE lxmCOMMA VE lxmCOMMA VE (lxmCOMMA VE lxmCOMMA VE lxmCOMMA VE) lxmCLOSE| DateAdd| DateDiff| BeginOfPeriod| EndOfPeriod
+DateAdd			=	lxmDATEADD lxmOPEN VE lxmCOMMA AllID lxmCOMMA VE lxmCLOSE
+DateDiff			=	lxmDATEDIFF lxmOPEN VE  lxmCOMMA VE lxmCOMMA AllID lxmCLOSE
+BeginOfPeriod			=	lxmBEGINOFPERIOD lxmOPEN VE  (lxmCOMMA AllID ) lxmCLOSE
+EndOfPeriod			=	lxmENDOFPERIOD  lxmOPEN VE  (lxmCOMMA AllID) lxmCLOSE
+AllID			=	tknID | FuncDate
+FuncDate			=	lxmDAY|   lxmDAYOFYEAR|   lxmDAYOFWEEK|   lxmHOUR|   lxmMINUTE|   lxmMONTH|   lxmPRESENTATION|   lxmPRESENTATIONREFS|   lxmQUARTER|   lxmSECOND|   lxmWEEK |   lxmYEAR |   lxmVALUETYPE
+
+
+
+
+
+
+
+
+
+
+tknID = ws #'[a-zA-Zа-яА-Я__][0-9a-zA-Zа-яА-Я_]*' ws
+tknSTRING = ws #'\"(\"\"|[^\"])*\"' ws
+tknINT = ws #'[0-9]+' ws 
+tknNUMBER = ws #'[0-9]+(\.[0-9]*)?' ws
+tknPARAMETER = ws '&' tknID ws
+
+comment=#'//(.*)(\n|\r)*'
+ws0 =  <#'\s+'>
+ws = (comment | ws0)*
+
+
+
+
+lxmOPEN = ws '(' ws
+lxmCLOSE = ws ')' ws
+
+lxmCOMMA = ws ',' ws
+lxmDOT = ws '.' ws
+lxmPLUS = ws '+' ws
+lxmMINUS = ws '-' ws
+lxmDIV = ws '/' ws
+lxmMUL = ws '*' ws
+lxmMOD = ws '%' ws
+lxmENDL = ws ';' ws
+
+
+(* Ключевые слов*)
+lxmALL		 =	 ws 	(ru_ALL	| en_ALL)		 ws (* ключевое слово ALL*)
+	ru_ALL		 = 	 #'(?i)ВСЕ'
+	en_ALL		 = 	 #'(?i)ALL'
+lxmALLOWED		 =	 ws 	(ru_ALLOWED 		| en_ALLOWED)		 ws (* ключевое слово ALLOWED*)
+	ru_ALLOWED		 = 	 #'(?i)РАЗРЕШЕННЫЕ'
+	en_ALLOWED		 = 	 #'(?i)ALLOWED'
+lxmAND		 =	 ws 	(ru_AND 		| en_AND)		 ws (* ключевое слово AND*)
+	ru_AND		 = 	 #'(?i)И'
+	en_AND		 = 	 #'(?i)AND'
+lxmAS		 =	 ws 	(ru_AS 		| en_AS)		 ws (* ключевое слово AS*)
+	ru_AS		 = 	 #'(?i)КАК'
+	en_AS		 = 	 #'(?i)AS'
+lxmASC		 =	 ws 	(ru_ASC 		| en_ASC)		 ws (* ключевое слово ASC*)
+	ru_ASC		 = 	 #'(?i)ВОЗР'
+	en_ASC		 = 	 #'(?i)ASC'
+lxmAVG		 =	 ws 	(ru_AVG 		| en_AVG)		 ws (* ключевое слово AVG*)
+	ru_AVG		 = 	 #'(?i)СРЕДНЕЕ'
+	en_AVG		 = 	 #'(?i)AVG'
+lxmAUTOORDER		 =	 ws 	(ru_AUTOORDER 		| en_AUTOORDER)		 ws (* ключевое слово AUTOORDER*)
+	ru_AUTOORDER		 = 	 #'(?i)АВТОУПОРЯДОЧИВАНИЕ'
+	en_AUTOORDER		 = 	 #'(?i)AUTOORDER'
+lxmBEGINOFPERIOD		 =	 ws 	(ru_BEGINOFPERIOD 		| en_BEGINOFPERIOD)		 ws (* ключевое слово BEGINOFPERIOD*)
+	ru_BEGINOFPERIOD		 = 	 #'(?i)НАЧАЛОПЕРИОДА'
+	en_BEGINOFPERIOD		 = 	 #'(?i)BEGINOFPERIOD'
+lxmBETWEEN		 =	 ws 	(ru_BETWEEN 		| en_BETWEEN)		 ws (* ключевое слово BETWEEN*)
+	ru_BETWEEN		 = 	 #'(?i)МЕЖДУ'
+	en_BETWEEN		 = 	 #'(?i)BETWEEN'
+lxmBOOLEAN		 =	 ws 	(ru_BOOLEAN 		| en_BOOLEAN)		 ws (* ключевое слово BOOLEAN*)
+	ru_BOOLEAN		 = 	 #'(?i)БУЛЕВО'
+	en_BOOLEAN		 = 	 #'(?i)BOOLEAN'
+lxmCASE		 =	 ws 	(ru_CASE 		| en_CASE)		 ws (* ключевое слово CASE*)
+	ru_CASE		 = 	 #'(?i)ВЫБОР'
+	en_CASE		 = 	 #'(?i)CASE'
+lxmCAST		 =	 ws 	(ru_CAST 		| en_CAST)		 ws (* ключевое слово CAST*)
+	ru_CAST		 = 	 #'(?i)ВЫРАЗИТЬ'
+	en_CAST		 = 	 #'(?i)CAST'
+lxmCOUNT		 =	 ws 	(ru_COUNT 		| en_COUNT)		 ws (* ключевое слово COUNT*)
+	ru_COUNT		 = 	 #'(?i)КОЛИЧЕСТВО'
+	en_COUNT		 = 	 #'(?i)COUNT'
+lxmDATE		 =	 ws 	(ru_DATE 		| en_DATE)		 ws (* ключевое слово DATE*)
+	ru_DATE		 = 	 #'(?i)ДАТА'
+	en_DATE		 = 	 #'(?i)DATE'
+lxmDATEADD		 =	 ws 	(ru_DATEADD 		| en_DATEADD)		 ws (* ключевое слово DATEADD*)
+	ru_DATEADD		 = 	 #'(?i)ДОБАВИТЬКДАТЕ'
+	en_DATEADD		 = 	 #'(?i)DATEADD'
+lxmDATEDIFF		 =	 ws 	(ru_DATEDIFF 		| en_DATEDIFF)		 ws (* ключевое слово DATEDIFF*)
+	ru_DATEDIFF		 = 	 #'(?i)РАЗНОСТЬДАТ'
+	en_DATEDIFF		 = 	 #'(?i)DATEDIFF'
+lxmDATETIME		 =	 ws 	(ru_DATETIME 		| en_DATETIME)		 ws (* ключевое слово DATETIME*)
+	ru_DATETIME		 = 	 #'(?i)ДАТАВРЕМЯ'
+	en_DATETIME		 = 	 #'(?i)DATETIME'
+lxmDAY		 =	 ws 	(ru_DAY 		| en_DAY)		 ws (* ключевое слово DAY*)
+	ru_DAY		 = 	 #'(?i)ДЕНЬ'
+	en_DAY		 = 	 #'(?i)DAY'
+lxmDAYOFWEEK		 =	 ws 	(ru_DAYOFWEEK 		| en_DAYOFWEEK)		 ws (* ключевое слово DAYOFWEEK*)
+	ru_DAYOFWEEK		 = 	 #'(?i)ДЕНЬНЕДЕЛИ'
+	en_DAYOFWEEK		 = 	 #'(?i)DAYOFWEEK'
+lxmDAYOFYEAR		 =	 ws 	(ru_DAYOFYEAR 		| en_DAYOFYEAR)		 ws (* ключевое слово DAYOFYEAR*)
+	ru_DAYOFYEAR		 = 	 #'(?i)ДЕНЬГОДА'
+	en_DAYOFYEAR		 = 	 #'(?i)DAYOFYEAR'
+lxmDESC		 =	 ws 	(ru_DESC 		| en_DESC)		 ws (* ключевое слово DESC*)
+	ru_DESC		 = 	 #'(?i)УБЫВ'
+	en_DESC		 = 	 #'(?i)DESC'
+lxmDISTINCT		 =	 ws 	(ru_DISTINCT 		| en_DISTINCT)		 ws (* ключевое слово DISTINCT*)
+	ru_DISTINCT		 = 	 #'(?i)РАЗЛИЧНЫЕ'
+	en_DISTINCT		 = 	 #'(?i)DISTINCT'
+lxmDROP		 =	 ws 	(ru_DROP 		| en_DROP)		 ws (* ключевое слово DROP*)
+	ru_DROP		 = 	 #'(?i)УНИЧТОЖИТЬ'
+	en_DROP		 = 	 #'(?i)DROP'
+lxmELSE		 =	 ws 	(ru_ELSE 		| en_ELSE)		 ws (* ключевое слово ELSE*)
+	ru_ELSE		 = 	 #'(?i)ИНАЧЕ'
+	en_ELSE		 = 	 #'(?i)ELSE'
+lxmEND		 =	 ws 	(ru_END 		| en_END)		 ws (* ключевое слово END*)
+	ru_END		 = 	 #'(?i)КОНЕЦ'
+	en_END		 = 	 #'(?i)END'
+lxmENDOFPERIOD		 =	 ws 	(ru_ENDOFPERIOD 		| en_ENDOFPERIOD)		 ws (* ключевое слово ENDOFPERIOD*)
+	ru_ENDOFPERIOD		 = 	 #'(?i)КОНЕЦПЕРИОДА'
+	en_ENDOFPERIOD		 = 	 #'(?i)ENDOFPERIOD'
+lxmESCAPE		 =	 ws 	(ru_ESCAPE 		| en_ESCAPE)		 ws (* ключевое слово ESCAPE*)
+	ru_ESCAPE		 = 	 #'(?i)СПЕЦСИМВОЛ'
+	en_ESCAPE		 = 	 #'(?i)ESCAPE'
+lxmFALSE		 =	 ws 	(ru_FALSE 		| en_FALSE)		 ws (* ключевое слово FALSE*)
+	ru_FALSE		 = 	 #'(?i)ЛОЖЬ'
+	en_FALSE		 = 	 #'(?i)FALSE'
+lxmFOR		 =	 ws 	(ru_FOR 		| en_FOR)		 ws (* ключевое слово FOR*)
+	ru_FOR		 = 	 #'(?i)ДЛЯ'
+	en_FOR		 = 	 #'(?i)FOR'
+lxmFROM		 =	 ws 	(ru_FROM 		| en_FROM)		 ws (* ключевое слово FROM*)
+	ru_FROM		 = 	 #'(?i)ИЗ'
+	en_FROM		 = 	 #'(?i)FROM'
+lxmFULL		 =	 ws 	(ru_FULL 		| en_FULL)		 ws (* ключевое слово FULL*)
+	ru_FULL		 = 	 #'(?i)ПОЛНОЕ'
+	en_FULL		 = 	 #'(?i)FULL'
+lxmGROUP		 =	 ws 	(ru_GROUP 		| en_GROUP)		 ws (* ключевое слово GROUP*)
+	ru_GROUP		 = 	 #'(?i)СГРУППИРОВАТЬ'
+	en_GROUP		 = 	 #'(?i)GROUP'
+lxmHAVING		 =	 ws 	(ru_HAVING 		| en_HAVING)		 ws (* ключевое слово HAVING*)
+	ru_HAVING		 = 	 #'(?i)ИМЕЮЩИЕ'
+	en_HAVING		 = 	 #'(?i)HAVING'
+lxmHIERARCHY		 =	 ws 	(ru_HIERARCHY 		| en_HIERARCHY)		 ws (* ключевое слово HIERARCHY*)
+	ru_HIERARCHY		 = 	 #'(?i)HIERARCHY'
+	en_HIERARCHY		 = 	 #'(?i)HIERARCHY'
+lxmHIERARCHYIN		 =	 ws 	(ru_HIERARCHYIN 		| en_HIERARCHYIN)		 ws (* ключевое слово HIERARCHYIN*)
+	ru_HIERARCHYIN		 = 	 #'(?i)ИЕРАРХИИ'
+	en_HIERARCHYIN		 = 	 #'(?i)ИЕРАРХИИ'
+lxmHIERARCHYON		 =	 ws 	(ru_HIERARCHYON 		| en_HIERARCHYON)		 ws (* ключевое слово HIERARCHYON*)
+	ru_HIERARCHYON		 = 	 #'(?i)ИЕРАРХИЯ'
+	en_HIERARCHYON		 = 	 #'(?i)ИЕРАРХИЯ'
+lxmHOUR		 =	 ws 	(ru_HOUR 		| en_HOUR)		 ws (* ключевое слово HOUR*)
+	ru_HOUR		 = 	 #'(?i)ЧАС'
+	en_HOUR		 = 	 #'(?i)HOUR'
+lxmIN		 =	 ws 	(ru_IN 		| en_IN)		 ws (* ключевое слово IN*)
+	ru_IN		 = 	 #'(?i)В'
+	en_IN		 = 	 #'(?i)IN'
+lxmINDEX		 =	 ws 	(ru_INDEX 		| en_INDEX)		 ws (* ключевое слово INDEX*)
+	ru_INDEX		 = 	 #'(?i)ИНДЕКСИРОВАТЬ'
+	en_INDEX		 = 	 #'(?i)INDEX'
+lxmINNER		 =	 ws 	(ru_INNER 		| en_INNER)		 ws (* ключевое слово INNER*)
+	ru_INNER		 = 	 #'(?i)ВНУТРЕННЕЕ'
+	en_INNER		 = 	 #'(?i)INNER'
+lxmINTO		 =	 ws 	(ru_INTO 		| en_INTO)		 ws (* ключевое слово INTO*)
+	ru_INTO		 = 	 #'(?i)ПОМЕСТИТЬ'
+	en_INTO		 = 	 #'(?i)INTO'
+lxmIS		 =	 ws 	(ru_IS 		| en_IS)		 ws (* ключевое слово IS*)
+	ru_IS		 = 	 #'(?i)ЕСТЬ'
+	en_IS		 = 	 #'(?i)IS'
+lxmISNULL		 =	 ws 	(ru_ISNULL 		| en_ISNULL)		 ws (* ключевое слово ISNULL*)
+	ru_ISNULL		 = 	 #'(?i)ЕСТЬNULL'
+	en_ISNULL		 = 	 #'(?i)ISNULL'
+lxmJOIN		 =	 ws 	(ru_JOIN 		| en_JOIN)		 ws (* ключевое слово JOIN*)
+	ru_JOIN		 = 	 #'(?i)СОЕДИНЕНИЕ'
+	en_JOIN		 = 	 #'(?i)JOIN'
+lxmLEFT		 =	 ws 	(ru_LEFT 		| en_LEFT)		 ws (* ключевое слово LEFT*)
+	ru_LEFT		 = 	 #'(?i)ЛЕВОЕ'
+	en_LEFT		 = 	 #'(?i)LEFT'
+lxmLIKE		 =	 ws 	(ru_LIKE 		| en_LIKE)		 ws (* ключевое слово LIKE*)
+	ru_LIKE		 = 	 #'(?i)ПОДОБНО'
+	en_LIKE		 = 	 #'(?i)LIKE'
+lxmMAX		 =	 ws 	(ru_MAX 		| en_MAX)		 ws (* ключевое слово MAX*)
+	ru_MAX		 = 	 #'(?i)МАКСИМУМ'
+	en_MAX		 = 	 #'(?i)MAX'
+lxmVALUE		 =	 ws 	(ru_VALUE 		| en_VALUE)		 ws (* ключевое слово VALUE*)
+	ru_VALUE		 = 	 #'(?i)ЗНАЧЕНИЕ'
+	en_VALUE		 = 	 #'(?i)VALUE'
+lxmMIN		 =	 ws 	(ru_MIN 		| en_MIN)		 ws (* ключевое слово MIN*)
+	ru_MIN		 = 	 #'(?i)МИНИМУМ'
+	en_MIN		 = 	 #'(?i)MIN'
+lxmMINUTE		 =	 ws 	(ru_MINUTE 		| en_MINUTE)		 ws (* ключевое слово MINUTE*)
+	ru_MINUTE		 = 	 #'(?i)МИНУТА'
+	en_MINUTE		 = 	 #'(?i)MINUTE'
+lxmMONTH		 =	 ws 	(ru_MONTH 		| en_MONTH)		 ws (* ключевое слово MONTH*)
+	ru_MONTH		 = 	 #'(?i)МЕСЯЦ'
+	en_MONTH		 = 	 #'(?i)MONTH'
+lxmNOT		 =	 ws 	(ru_NOT 		| en_NOT)		 ws (* ключевое слово NOT*)
+	ru_NOT		 = 	 #'(?i)НЕ'
+	en_NOT		 = 	 #'(?i)NOT'
+lxmNULL		 =	 ws 	(ru_NULL 		| en_NULL)		 ws (* ключевое слово NULL*)
+	ru_NULL		 = 	 #'(?i)NULL'
+	en_NULL		 = 	 #'(?i)NULL'
+lxmNUMBER =	 ws 	(ru_NUMBER 		| en_NUMBER)		 ws (* ключевое слово NUMBER*)
+	ru_NUMBER		 = 	 #'(?i)ЧИСЛО'
+	en_NUMBER		 = 	 #'(?i)NUMBER'
+lxmBY		 =	 ws 	(ru_BY 		| en_BY)		 ws (* ключевое слово BY*)
+	ru_BY		 = 	 #'(?i)ПО'
+	en_BY		 = 	 #'(?i)BY'
+lxmON		 =	 ws 	(ru_ON 		| en_ON)		 ws (* ключевое слово ON*)
+	ru_ON		 = 	 #'(?i)ПО'
+	en_ON		 = 	 #'(?i)ON'
+lxmONLY		 =	 ws 	(ru_ONLY 		| en_ONLY)		 ws (* ключевое слово ONLY*)
+	ru_ONLY		 = 	 #'(?i)ТОЛЬКО'
+	en_ONLY		 = 	 #'(?i)ONLY'
+lxmOR		 =	 ws 	(ru_OR 		| en_OR)		 ws (* ключевое слово OR*)
+	ru_OR		 = 	 #'(?i)ИЛИ'
+	en_OR		 = 	 #'(?i)OR'
+lxmORDER		 =	 ws 	(ru_ORDER 		| en_ORDER)		 ws (* ключевое слово ORDER*)
+	ru_ORDER		 = 	 #'(?i)УПОРЯДОЧИТЬ'
+	en_ORDER		 = 	 #'(?i)ORDER'
+lxmOUTER		 =	 ws 	(ru_OUTER 		| en_OUTER)		 ws (* ключевое слово OUTER*)
+	ru_OUTER		 = 	 #'(?i)ВНЕШНЕЕ'
+	en_OUTER		 = 	 #'(?i)OUTER'
+lxmPERIODS		 =	 ws 	(ru_PERIODS 		| en_PERIODS)		 ws (* ключевое слово PERIODS*)
+	ru_PERIODS		 = 	 #'(?i)ПЕРИОДАМИ'
+	en_PERIODS		 = 	 #'(?i)PERIODS'
+lxmPRESENTATION		 =	 ws 	(ru_PRESENTATION 		| en_PRESENTATION)		 ws (* ключевое слово PRESENTATION*)
+	ru_PRESENTATION		 = 	 #'(?i)ПРЕДСТАВЛЕНИЕ'
+	en_PRESENTATION		 = 	 #'(?i)PRESENTATION'
+lxmPRESENTATIONREFS		 =	 ws 	(ru_PRESENTATIONREFS 		| en_PRESENTATIONREFS)		 ws (* ключевое слово PRESENTATIONREFS*)
+	ru_PRESENTATIONREFS		 = 	 #'(?i)ПРЕДСТАВЛЕНИЕССЫЛКИ'
+	en_PRESENTATIONREFS		 = 	 #'(?i)PRESENTATIONREFS'
+lxmQUARTER		 =	 ws 	(ru_QUARTER 		| en_QUARTER)		 ws (* ключевое слово QUARTER*)
+	ru_QUARTER		 = 	 #'(?i)КВАРТАЛ'
+	en_QUARTER		 = 	 #'(?i)QUARTER'
+lxmREFS		 =	 ws 	(ru_REFS 		| en_REFS)		 ws (* ключевое слово REFS*)
+	ru_REFS		 = 	 #'(?i)ССЫЛКА'
+	en_REFS		 = 	 #'(?i)REFS'
+lxmRIGHT		 =	 ws 	(ru_RIGHT 		| en_RIGHT)		 ws (* ключевое слово RIGHT*)
+	ru_RIGHT		 = 	 #'(?i)ПРАВОЕ'
+	en_RIGHT		 = 	 #'(?i)RIGHT'
+lxmSECOND		 =	 ws 	(ru_SECOND 		| en_SECOND)		 ws (* ключевое слово SECOND*)
+	ru_SECOND		 = 	 #'(?i)СЕКУНДА'
+	en_SECOND		 = 	 #'(?i)SECOND'
+lxmSELECT		 =	 ws 	(ru_SELECT 		| en_SELECT)		 ws (* ключевое слово SELECT*)
+	ru_SELECT		 = 	 #'(?i)ВЫБРАТЬ'
+	en_SELECT		 = 	 #'(?i)SELECT'
+lxmSTRING		 =	 ws 	(ru_STRING 		| en_STRING)		 ws (* ключевое слово STRING*)
+	ru_STRING		 = 	 #'(?i)СТРОКА'
+	en_STRING		 = 	 #'(?i)STRING'
+lxmSUBSTRING		 =	 ws 	(ru_SUBSTRING 		| en_SUBSTRING)		 ws (* ключевое слово SUBSTRING*)
+	ru_SUBSTRING		 = 	 #'(?i)ПОДСТРОКА'
+	en_SUBSTRING		 = 	 #'(?i)SUBSTRING'
+lxmSUM		 =	 ws 	(ru_SUM 		| en_SUM)		 ws (* ключевое слово SUM*)
+	ru_SUM		 = 	 #'(?i)СУММА'
+	en_SUM		 = 	 #'(?i)SUM'
+lxmTABLE		 =	 ws 	(ru_TABLE 		| en_TABLE)		 ws (* ключевое слово TABLE*)
+	ru_TABLE		 = 	 #'(?i)ТАБЛИЦА'
+	en_TABLE		 = 	 #'(?i)TABLE'
+lxmTHEN		 =	 ws 	(ru_THEN 		| en_THEN)		 ws (* ключевое слово THEN*)
+	ru_THEN		 = 	 #'(?i)ТОГДА'
+	en_THEN		 = 	 #'(?i)THEN'
+lxmTOP		 =	 ws 	(ru_TOP 		| en_TOP)		 ws (* ключевое слово TOP*)
+	ru_TOP		 = 	 #'(?i)ПЕРВЫЕ'
+	en_TOP		 = 	 #'(?i)TOP'
+lxmTOTALS		 =	 ws 	(ru_TOTALS 		| en_TOTALS)		 ws (* ключевое слово TOTALS*)
+	ru_TOTALS		 = 	 #'(?i)ИТОГИ'
+	en_TOTALS		 = 	 #'(?i)TOTALS'
+lxmTRUE		 =	 ws 	(ru_TRUE 		| en_TRUE)		 ws (* ключевое слово TRUE*)
+	ru_TRUE		 = 	 #'(?i)ИСТИНА'
+	en_TRUE		 = 	 #'(?i)TRUE'
+lxmTYPE		 =	 ws 	(ru_TYPE 		| en_TYPE)		 ws (* ключевое слово TYPE*)
+	ru_TYPE		 = 	 #'(?i)ТИП'
+	en_TYPE		 = 	 #'(?i)TYPE'
+lxmUNDEFINED		 =	 ws 	(ru_UNDEFINED 		| en_UNDEFINED)		 ws (* ключевое слово UNDEFINED*)
+	ru_UNDEFINED		 = 	 #'(?i)НЕОПРЕДЕЛЕНО'
+	en_UNDEFINED		 = 	 #'(?i)UNDEFINED'
+lxmUNION		 =	 ws 	(ru_UNION 		| en_UNION)		 ws (* ключевое слово UNION*)
+	ru_UNION		 = 	 #'(?i)ОБЪЕДИНИТЬ'
+	en_UNION		 = 	 #'(?i)UNION'
+lxmUPDATE		 =	 ws 	(ru_UPDATE 		| en_UPDATE)		 ws (* ключевое слово UPDATE*)
+	ru_UPDATE		 = 	 #'(?i)ИЗМЕНЕНИЯ'
+	en_UPDATE		 = 	 #'(?i)UPDATE'
+lxmVALUETYPE		 =	 ws 	(ru_VALUETYPE 		| en_VALUETYPE)		 ws (* ключевое слово VALUETYPE*)
+	ru_VALUETYPE		 = 	 #'(?i)ТИПЗНАЧЕНИЯ'
+	en_VALUETYPE		 = 	 #'(?i)VALUETYPE'
+lxmWEEK		 =	 ws 	(ru_WEEK 		| en_WEEK)		 ws (* ключевое слово WEEK*)
+	ru_WEEK		 = 	 #'(?i)НЕДЕЛЯ'
+	en_WEEK		 = 	 #'(?i)WEEK'
+lxmWHEN		 =	 ws 	(ru_WHEN 		| en_WHEN)		 ws (* ключевое слово WHEN*)
+	ru_WHEN		 = 	 #'(?i)КОГДА'
+	en_WHEN		 = 	 #'(?i)WHEN'
+lxmWHERE		 =	 ws 	(ru_WHERE 		| en_WHERE)		 ws (* ключевое слово WHERE*)
+	ru_WHERE		 = 	 #'(?i)ГДЕ'
+	en_WHERE		 = 	 #'(?i)WHERE'
+lxmYEAR		 =	 ws 	(ru_YEAR 		| en_YEAR)		 ws (* ключевое слово YEAR*)
+	ru_YEAR		 = 	 #'(?i)ГОД'
+	en_YEAR		 = 	 #'(?i)YEAR'
+
+
+
+

@@ -10,7 +10,7 @@
   (lambda (s)
     (only-id! #f)
     (let* ([buf (open-string-input-port (string-append s " "))]
-           [lexer (construct-lexer buf #f )])
+           [lexer (construct-lexer buf )])
       (let loop ((results '()))
         (let ((next-token   (lexer)))
           (if (eq? (eof-object) (token-type next-token))

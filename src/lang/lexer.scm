@@ -119,7 +119,7 @@
  
  
  (define construct-lexer
-   (lambda (input-port source)
+   (lambda (input-port )
      (letrec (;;; Lexer IO support functions:
               (line-position 1)
               (column-position 1)
